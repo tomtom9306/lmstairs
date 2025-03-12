@@ -1975,7 +1975,7 @@
       });
       
       // Page navigation function
-      function navigateToPage(pageName) {
+      function navigateToPage(pageName, pushState = true) {
         // Add transition class to page content
         pageContent.classList.add('page-transition');
         
@@ -2008,6 +2008,12 @@
               top: 0,
               behavior: 'auto'
             });
+            
+            // Update browser history
+            if (pushState) {
+              const pageTitle = pageName.charAt(0).toUpperCase() + pageName.slice(1);
+              history.pushState({ page: pageName }, pageTitle, '#' + pageName);
+            }
           }
           
           // Remove transition class
@@ -2020,9 +2026,47 @@
         link.addEventListener('click', function(e) {
           e.preventDefault();
           const pageName = this.getAttribute('data-page');
-          navigateToPage(pageName);
+          navigateToPage(pageName, true);
         });
       });
+      
+      // Handle browser back/forward button
+      window.addEventListener('popstate', function(event) {
+        if (event.state && event.state.page) {
+          // Navigate to the previous page without pushing a new state
+          navigateToPage(event.state.page, false);
+        } else if (location.hash) {
+          // If URL has a hash but no state, try to navigate to that page
+          const pageName = location.hash.substring(1);
+          navigateToPage(pageName, false);
+        } else {
+          // Default to home page if no state or hash
+          navigateToPage('home', false);
+        }
+      });
+      
+      // Set initial history state based on current URL
+      function initializeHistory() {
+        let initialPage = 'home';
+        
+        // Check if URL has a hash
+        if (location.hash) {
+          const hashPage = location.hash.substring(1);
+          const hashPageElement = document.getElementById(hashPage + '-page');
+          if (hashPageElement) {
+            initialPage = hashPage;
+          }
+        }
+        
+        // Set the initial state without pushing to history
+        history.replaceState({ page: initialPage }, initialPage, '#' + initialPage);
+        
+        // Navigate to the initial page
+        navigateToPage(initialPage, false);
+      }
+      
+      // Initialize history when DOM is loaded
+      initializeHistory();
       
       // Product detail popup functionality
       const productDetailClose = document.getElementById('product-detail-close');
@@ -2943,6 +2987,351 @@
       });
       
       console.log('Testimonial sliders initialized:', allSliders.length);
+    });
+  </script>
+  
+  <!-- Form handling script for Brevo integration -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Contact form handling
+      const enquiryForm = document.getElementById('enquiry-form');
+      const formSuccess = document.getElementById('form-success');
+      const formError = document.getElementById('form-error');
+      
+      if (enquiryForm) {
+        enquiryForm.addEventListener('submit', function(e) {
+          e.preventDefault();
+          
+          // Show loading state
+          const submitButton = this.querySelector('.form-submit');
+          const originalButtonText = submitButton.textContent;
+          submitButton.textContent = 'Submitting...';
+          submitButton.disabled = true;
+          
+          // Hide previous messages
+          formSuccess.style.display = 'none';
+          formError.style.display = 'none';
+          
+          // Get form data
+          const formData = new FormData(enquiryForm);
+          const name = formData.get('name');
+          const email = formData.get('email');
+          const phone = formData.get('phone');
+          const location = formData.get('location');
+          const message = formData.get('message');
+          
+          // Prepare data for Brevo API
+          const brevoData = {
+            email: email,
+            attributes: {
+              FIRSTNAME: name.split(' ')[0] || '',
+              LASTNAME: name.split(' ').slice(1).join(' ') || '',
+              PHONE: phone || '',
+              LOCATION: location || '',
+              MESSAGE: message || ''
+            },
+            listIds: [6], // Brevo list ID
+            updateEnabled: true,
+            // Add these fields to make sure the email is sent
+            emailBlacklisted: false,
+            smsBlacklisted: false
+          };
+          
+          console.log('Sending data to Brevo:', brevoData);
+          
+          // Zawsze wyślij powiadomienie e-mail niezależnie od rezultatu API
+          sendNotificationEmail(name, email, phone, location, message);
+          
+          // Send to Brevo API
+          fetch('https://api.brevo.com/v3/contacts', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'api-key': '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'
+            },
+            body: JSON.stringify(brevoData)
+          })
+          .then(response => {
+            console.log('Response status:', response.status);
+            // Log the full response for debugging
+            return response.text().then(text => {
+              try {
+                const data = text ? JSON.parse(text) : {};
+                console.log('Response data:', data);
+                if (response.ok || response.status === 201) {
+                  // Success
+                  formSuccess.style.display = 'block';
+                  formError.style.display = 'none';
+                  enquiryForm.reset();
+                  
+                  // Powiadomienie e-mail zostało już wysłane na początku przetwarzania formularza
+                  return true;
+                } else {
+                  // Handle known error responses
+                  console.error('API Error:', data);
+                  formError.style.display = 'block';
+                  formSuccess.style.display = 'none';
+                  
+                  // Powiadomienie e-mail zostało już wysłane na początku przetwarzania formularza
+                  return false;
+                }
+              } catch (e) {
+                console.error('Error parsing response:', e, text);
+                formError.style.display = 'block';
+                formSuccess.style.display = 'none';
+                
+                // Powiadomienie e-mail zostało już wysłane na początku przetwarzania formularza
+                return false;
+              }
+            });
+          })
+          .catch(error => {
+            console.error('Network Error:', error);
+            formError.style.display = 'block';
+            formSuccess.style.display = 'none';
+            
+            // Powiadomienie e-mail zostało już wysłane na początku przetwarzania formularza
+          })
+          .finally(() => {
+            // Reset button state
+            submitButton.textContent = originalButtonText;
+            submitButton.disabled = false;
+          });
+        });
+      }
+      
+      // Newsletter signup form handling
+      const newsletterForm = document.getElementById('newsletter-form');
+      const newsletterSuccess = document.getElementById('newsletter-success');
+      const newsletterError = document.getElementById('newsletter-error');
+      
+      if (newsletterForm) {
+        newsletterForm.addEventListener('submit', function(e) {
+          e.preventDefault();
+          
+          // Show loading state
+          const submitButton = this.querySelector('.newsletter-submit');
+          const originalButtonText = submitButton.textContent;
+          submitButton.textContent = 'Subscribing...';
+          submitButton.disabled = true;
+          
+          // Hide previous messages
+          newsletterSuccess.style.display = 'none';
+          newsletterError.style.display = 'none';
+          
+          // Get form data
+          const formData = new FormData(newsletterForm);
+          const email = formData.get('email');
+          
+          // Prepare data for Brevo API
+          const brevoData = {
+            email: email,
+            attributes: {
+              NEWSLETTER: true,
+              SOURCE: 'Website Newsletter'
+            },
+            listIds: [6], // Brevo list ID for newsletter subscribers
+            updateEnabled: true,
+            emailBlacklisted: false,
+            smsBlacklisted: false
+          };
+          
+          // Send to Brevo API
+          fetch('https://api.brevo.com/v3/contacts', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'api-key': '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'
+            },
+            body: JSON.stringify(brevoData)
+          })
+          .then(response => {
+            console.log('Newsletter response status:', response.status);
+            return response.text().then(text => {
+              try {
+                const data = text ? JSON.parse(text) : {};
+                console.log('Newsletter response data:', data);
+                if (response.ok || response.status === 201) {
+                  // Success
+                  newsletterSuccess.style.display = 'block';
+                  newsletterError.style.display = 'none';
+                  newsletterForm.reset();
+                  
+                  // Wysyłamy email powitalny po pomyślnej subskrypcji
+                  sendWelcomeEmail(email);
+                  
+                  return true;
+                } else {
+                  // Error
+                  newsletterError.style.display = 'block';
+                  newsletterSuccess.style.display = 'none';
+                  return false;
+                }
+              } catch (e) {
+                console.error('Newsletter error parsing response:', e, text);
+                newsletterError.style.display = 'block';
+                newsletterSuccess.style.display = 'none';
+                return false;
+              }
+            });
+          })
+          .catch(error => {
+            console.error('Newsletter network error:', error);
+            newsletterError.style.display = 'block';
+            newsletterSuccess.style.display = 'none';
+          })
+          .finally(() => {
+            // Reset button state
+            submitButton.textContent = originalButtonText;
+            submitButton.disabled = false;
+          });
+        });
+      }
+      
+      // Function to send welcome email to newsletter subscribers
+      function sendWelcomeEmail(email) {
+        const emailData = {
+          sender: {
+            name: "LM STAIRS",
+            email: "t93tomczak@gmail.com"
+          },
+          to: [
+            {
+              email: email
+            }
+          ],
+          subject: "Welcome to the LM STAIRS Newsletter",
+          htmlContent: `
+            <html>
+              <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                  <div style="text-align: center; margin-bottom: 20px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="150" height="80" viewBox="0 0 400 500" style="max-width: 150px;">
+                      <!-- Clean white background -->
+                      <rect width="400" height="500" fill="#FFFFFF"/>
+                      
+                      <style>
+                        /* Refined, high-contrast serif for LM */
+                        .lm {
+                          font-family: 'Didot', 'Times New Roman', serif;
+                          font-size: 138px;
+                          font-weight: 200;
+                          fill: #000000;
+                          text-anchor: middle;
+                          dominant-baseline: middle;
+                        }
+                        /* Elegant, modern sans serif for STAIRS */
+                        .stairs {
+                          font-family: 'Futura', 'Helvetica Neue', 'Arial', sans-serif;
+                          font-size: 48px;
+                          font-weight: 300;
+                          fill: #000000;
+                          text-anchor: middle;
+                          dominant-baseline: middle;
+                          letter-spacing: 4px;
+                          text-transform: uppercase;
+                        }
+                        /* High-end gold tone */
+                        .luxury-gold {
+                          fill: #BF9B30;
+                        }
+                      </style>
+                      
+                      <!-- Logo elements -->
+                      <g id="logo-elements">
+                        <!-- "LM" monogram - refined serif - wider -->
+                        <text x="200" y="180" class="lm" textLength="260" lengthAdjust="spacingAndGlyphs">LM</text>
+                        
+                        <!-- Premium gold separator line - wider -->
+                        <rect x="70" y="238" width="260" height="1" class="luxury-gold"/>
+                        
+                        <!-- "STAIRS" wordmark - larger font -->
+                        <text x="200" y="280" class="stairs" textLength="260" lengthAdjust="spacingAndGlyphs" font-size="38">STAIRS</text>
+                      </g>
+                    </svg>
+                  </div>
+                  <h2 style="color: #c8a165;">Thank You for Subscribing</h2>
+                  <p>We're delighted to welcome you to our community of design enthusiasts and architecture professionals.</p>
+                  <p>You'll now receive updates about our latest projects, design innovations, and industry insights.</p>
+                  <p>If you have any questions about our custom staircase solutions, please don't hesitate to contact our team.</p>
+                  <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #777;">
+                    <p>LM STAIRS | 42 Grosvenor Square, Mayfair, London W1K 2HP | +44 20 7123 4567</p>
+                  </div>
+                </div>
+              </body>
+            </html>
+          `
+        };
+        
+        fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'api-key': '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'
+          },
+          body: JSON.stringify(emailData)
+        })
+        .then(response => response.text())
+        .then(result => {
+          console.log('Welcome email result:', result);
+        })
+        .catch(error => {
+          console.error('Error sending welcome email:', error);
+        });
+      }
+      
+      // Helper function to send notification emails
+      function sendNotificationEmail(name, email, phone, location, message) {
+        // Use Brevo's SMTP API to send notification email to the business
+        const emailData = {
+          sender: {
+            name: "LM STAIRS Website",
+            email: "t93tomczak@gmail.com"  // Zweryfikowany adres email w Brevo
+          },
+          to: [
+            {
+              email: "t93tomczak@gmail.com",  // Adres email do odbierania zapytań
+              name: "LM STAIRS Team"
+            }
+          ],
+          subject: "New website enquiry from " + name,
+          htmlContent: `
+            <html>
+              <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                  <h2>New Inquiry from Website</h2>
+                  <p><strong>Name:</strong> ${name}</p>
+                  <p><strong>Email:</strong> ${email}</p>
+                  <p><strong>Phone:</strong> ${phone || 'Not provided'}</p>
+                  <p><strong>Location:</strong> ${location || 'Not provided'}</p>
+                  <p><strong>Message:</strong></p>
+                  <p>${message.replace(/\n/g, '<br>')}</p>
+                </div>
+              </body>
+            </html>
+          `
+        };
+        
+        fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'api-key': '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'
+          },
+          body: JSON.stringify(emailData)
+        })
+        .then(response => response.text())
+        .then(result => {
+          console.log('Notification email result:', result);
+        })
+        .catch(error => {
+          console.error('Error sending notification email:', error);
+        });
+      }
     });
   </script>
 </body>
